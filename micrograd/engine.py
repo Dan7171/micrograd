@@ -1,5 +1,7 @@
 # Α α, Β β, Γ γ, Δ δ, Ε ε, Ζ ζ, Η η, Θ θ, Ι ι, Κ κ, Λ λ, Μ μ, Ν ν, Ξ ξ, Ο ο, Π π, Ρ ρ, Σ σ ς, Τ τ, Υ υ, Φ φ, Χ χ, Ψ ψ, Ω ω
 import math
+import numpy as np
+
 class Value:
     def __init__(self, data, op='', label='', children=[], backward:callable=lambda:None): 
         assert isinstance(data, (int, float))
@@ -55,12 +57,30 @@ class Value:
         out_node = Value(out_data, '*', children=(self, other), backward=out_backward) # new node was born in the computational graph
         return out_node 
 
+    def __rmul__(self,other):
+        """
+        Enables Multiplication (__mul__) of both self*other and other*self (a fallback if __mul__ fails) 
+        """
+        return self * other
+
     def __pow__(self, other):
+        """
+        x**(const)
+        """
         # other = other if isinstance(other, Value) else Value(other)
-        out_data = self.data ** other.data
+
+        assert type(other) in [int, float]
+        
         def out_backward():
             dL_dself = self.grad # ∂(Loss)/∂(self)
-            
+            c = self._children[0] 
+            dself_dc = other * c.data**(other - 1) # ∂(self)/∂(child)
+            dL_dc = dL_dself * dself_dc  # ∂(L)/∂(child)
+            c.grad = dL_dc
+
+        out_data = self.data ** other
+        out = Value(out_data, op=f'**{other:.2f}',children=[self])
+        return out
 
     def __truediv__(self, other):
         other = other if isinstance(other, Value) else Value(other)
@@ -68,7 +88,7 @@ class Value:
     
     def __sub__(self, other):
         other = other if isinstance(other,Value) else Value(other)
-        return self + (-other) # use __add__
+        return self +  (-1.0) * other # use __add__
 
     def __exp__(self):
         """
@@ -117,7 +137,7 @@ class Value:
         """
         Relu(x) = max(x,0)
         """
-        out_data = math.max(0,self.val)
+        out_data = max(0,self.data)
         def out_backward():
             c = self._children[0] # x
             c.grad = float(c.data > 0) # ∂(Relu(x)/∂(x)) = 1 if x > 0 else 0 

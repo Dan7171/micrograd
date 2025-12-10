@@ -10,11 +10,11 @@ class Neuron:
 
         σ: non linearity function
         """
-        self.w : list[float] = [Value(random.sample()) for _ in range(in_features)]
-        self.b : float = Value(random.sample())
+        self.w = [Value(random.uniform(-1,1)) for _ in range(in_features)]
+        self.b = Value(random.uniform(-1,1))
         
     def __call__(self,x) -> Value:
-        return sum([xi*wi for (xi,wi) in zip(x,self.w)] + self.b)
+        return self.b + np.sum([xi*wi for (xi, wi) in zip(x,self.w)])
     
     
     def parameters(self):
@@ -76,6 +76,12 @@ class MLP:
         """
         nn_dims = [in_features] + layers_features
         self.layers = [Layer(nn_dims[i], nn_dims[i+1], non_lin) for i in range(len(nn_dims)-1)]
+        self.non_lin = [self._get_non_lin(non_lin) for _ in range(len(layers_features)-1 )]
+    
+    def _get_non_lin(self, non_lin_type):
+        match non_lin_type:
+            case 'relu':
+                return ReLU()
 
     def parameters(self):        
         param_list = []
@@ -87,14 +93,18 @@ class MLP:
         """
         Forward pass
         """
-        for layer in self.layers:
+        for i,layer in enumerate(self.layers):
             x = layer(x)
+            if i < len(self.layers) - 1:
+                σi = self.non_lin[i] # non linearity function (vector to vector) 
+                x = σi(x) # non linearity on all layers except the last.    
         return x
         
 if __name__ == '__main__':
     random.seed(42)
-    nn = MLP([3,4,3,1])
+    nn = MLP(3,[2,1],'relu')
     
+
     X_train = [
         [1.0, 2.0, 3.0],
         [0.0, 1.0, 0.0],
@@ -107,10 +117,10 @@ if __name__ == '__main__':
     lr = 0.01
     for ep in range(n_epoch):
         loss = 0
-        
         for x,y in zip(X_train,y_train):
             y_pred = nn(x)
-            loss += np.sqrt(y_pred - y)
+         
+            loss += (y_pred[0] - y)**2
         
         for p in nn.parameters():
             p.grad = 0 
