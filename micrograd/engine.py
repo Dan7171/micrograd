@@ -35,6 +35,7 @@ class Value:
         out_node = Value(out_data, '+', children=(self, other), backward=out_backward) # new node was born in the computational graph
         return out_node 
 
+
     def __mul__(self, other):
         """
         return a new Value node of self.data * 
@@ -79,7 +80,7 @@ class Value:
             c.grad = dL_dc
 
         out_data = self.data ** other
-        out = Value(out_data, op=f'**{other:.2f}',children=[self])
+        out = Value(out_data, op=f'**{other:.2f}',children=(self,))
         return out
 
     def __truediv__(self, other):
@@ -114,24 +115,24 @@ class Value:
   
     
     
-    def __div__(self):
-        """
-        return a new Value node of self.data * 
-        """
-        out_data = math.exp(self.data) # e^x  
+    # def __div__(self):
+    #     """
+    #     return a new Value node of self.data * 
+    #     """
+    #     out_data = math.exp(self.data) # e^x  
         
-        def out_backward():
-            """
-            Compute and set ∂(Loss)/∂(child) for each child of self.
-            ∂(Loss)/∂(child) = ∂(Loss)/∂(self) * ∂(self)/∂(child) 
-            """
-            dL_dself = self.grad # ∂(Loss)/∂(self). guaranteed to be known during backprop due to topological sort
-            dself_dc = self.data # ∂(e^x)/∂(x) = e^x 
-            c = self._children[0] # only one child
-            c.grad += dL_dself * dself_dc # chain rule 
+    #     def out_backward():
+    #         """
+    #         Compute and set ∂(Loss)/∂(child) for each child of self.
+    #         ∂(Loss)/∂(child) = ∂(Loss)/∂(self) * ∂(self)/∂(child) 
+    #         """
+    #         dL_dself = self.grad # ∂(Loss)/∂(self). guaranteed to be known during backprop due to topological sort
+    #         dself_dc = self.data # ∂(e^x)/∂(x) = e^x 
+    #         c = self._children[0] # only one child
+    #         c.grad += dL_dself * dself_dc # chain rule 
 
-        out_node = Value(out_data, '^', children=[self], backward=out_backward) # new node was born in the computational graph
-        return out_node
+    #     out_node = Value(out_data, '^', children=(self,), backward=out_backward) # new node was born in the computational graph
+    #     return out_node
 
     def relu(self):
         """
@@ -141,20 +142,21 @@ class Value:
         def out_backward():
             c = self._children[0] # x
             c.grad = float(c.data > 0) # ∂(Relu(x)/∂(x)) = 1 if x > 0 else 0 
-        out_node = Value(out_data, 'Relu', children=[self], backward=out_backward)
+        out_node = Value(out_data, 'ReLU', children=(self,), backward=out_backward)
         return out_node
 
 
+    def backward(self):
+        """
+        Accumulates new gradients in the network. 
+        loss_node: node which holds the network's loss. 
+        """
+        self.grad = 1.0 # d(loss)/d(loss) = 1 
+        topo_sort = topological_sort(self) # starting from the loss node, ending in input nodes (input coordinates)
+        for node in topo_sort:
+            node._backward() # computing gradients for node's children using the chain rule (d(loss)/d(child) = d(loss)/d(node) * d(node)/d(child))
 
-def backward(loss_node):
-    """
-    Accumulates new gradients in the network. 
-    loss_node: node which holds the network's loss. 
-    """
-    loss_node.grad = 1.0 # d(loss)/d(loss) = 1 
-    topo_sort = topological_sort(loss_node) # starting from the loss node, ending in input nodes (input coordinates)
-    for node in topo_sort:
-        node._backward() # computing gradients for node's children using the chain rule (d(loss)/d(child) = d(loss)/d(node) * d(node)/d(child))
+
 
 def topological_sort(root)->list:
     """
@@ -168,7 +170,7 @@ def topological_sort(root)->list:
     def build_topo_rec(node):
         if node in reversed_topo_set:
             return # because we dont want to add any node more than once to the result
-        for ch in node.children:
+        for ch in node._children:
             build_topo_rec(ch)
         
         reversed_topo_set.add(node)
@@ -176,6 +178,6 @@ def topological_sort(root)->list:
         
         
     build_topo_rec(root)
-    topo = reversed_topo.reversed()
-    return topo 
+    reversed_topo.reverse()
+    return reversed_topo 
 

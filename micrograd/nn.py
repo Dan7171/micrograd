@@ -20,8 +20,8 @@ class Neuron:
     def parameters(self):
         param_list = []
         for wi in self.w:
-            param_list += wi
-        param_list += b
+            param_list.append(wi)
+        param_list.append(self.b)
         return param_list
 
 class Layer: # 
@@ -99,33 +99,34 @@ class MLP:
                 σi = self.non_lin[i] # non linearity function (vector to vector) 
                 x = σi(x) # non linearity on all layers except the last.    
         return x
-        
-if __name__ == '__main__':
-    random.seed(42)
-    nn = MLP(3,[2,1],'relu')
+
+
+# if __name__ == '__main__':
+#     random.seed(42)
+#     nn = MLP(3,[2,1],'relu')
     
 
-    X_train = [
-        [1.0, 2.0, 3.0],
-        [0.0, 1.0, 0.0],
-        [0.5, 1.0, 3.0],
+#     X_train = [
+#         [1.0, 2.0, 3.0],
+#         [0.0, 1.0, 0.0],
+#         [0.5, 1.0, 3.0],
             
-    ]
-    y_train = [1.0, 2.0, 3.0] 
+#     ]
+#     y_train = [1.0, 2.0, 3.0] 
 
-    n_epoch = 3
-    lr = 0.01
-    for ep in range(n_epoch):
-        loss = 0
-        for x,y in zip(X_train,y_train):
-            y_pred = nn(x)
-         
-            loss += (y_pred[0] - y)**2
+#     n_epoch = 3
+#     lr = 0.01
+#     for ep in range(n_epoch):
+#         # loss_data = Value(0.0)
+#         loss = 0.0
+#         for xi,yi in zip(X_train,y_train):
+#             yi_pred = nn(xi)[0]
+#             loss_i = (yi_pred - yi)**2
+#             loss = loss_i + loss
         
-        for p in nn.parameters():
-            p.grad = 0 
-
-        loss.backward() # get d(L)/d(p) for each parameter p in the network 
-        
-        for p in nn.parameters():
-            p.value -= lr * p.grad # Update network params: p -= lr * d(L)/d(p)
+#         # loss = Value(loss_data, children=(y_pred,))
+#         for p in nn.parameters():
+#             p.grad = 0 
+#         loss.backward() # get d(L)/d(p) for each parameter p in the network 
+#         for p in nn.parameters():
+#             p.value -= lr * p.grad # Update network params: p -= lr * d(L)/d(p)
