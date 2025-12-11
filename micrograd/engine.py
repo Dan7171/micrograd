@@ -3,12 +3,12 @@ import math
 import numpy as np
 
 class Value:
-    def __init__(self, data, op='', label='', children=[], backward:callable=lambda:None): 
+    def __init__(self, data, op='', children=(), backward:callable=lambda:None): 
         assert isinstance(data, (int, float))
         self.data = data
         self.grad = 0.0 # ∂(Loss)/∂(self.data). An entry in Loss gradient   https://en.wikipedia.org/wiki/Gradient. Respecting torch api
         self._op = op # the operation that generated the value (if exists. only for visualizations)
-        self._label = label # (optional node name (label). only for visualizations)
+        self.label = '' # (optional node name (label). only for visualizations)
         self._children = children # the Values that participated in self._op (will be children in DAG during backward pass) 
         self._backward = backward # Function to apply in backward pass. self._backward must compute and set child.grad =∂(Loss)/∂(child) for each child of self. 
     
@@ -21,18 +21,18 @@ class Value:
         """
         other = other if isinstance(other,Value) else Value(other)
         out_data = self.data + other.data 
+        out_node = Value(out_data, '+', children=(self, other)) # new node was born in the computational graph
         
         def out_backward():
             """
-            Compute and set ∂(Loss)/∂(child) for each child of self.
-            ∂(Loss)/∂(child) = ∂(Loss)/∂(self) * ∂(self)/∂(child) 
+            Backward function of the "Out" node.
             """
-            dL_dself = self.grad # ∂(Loss)/∂(self). guaranteed to be known during backprop due to topological sort
-            for c in self._children: 
-                dself_dc = 1.0 #  ∂(self)/∂(child)
-                c.grad = dL_dself * dself_dc # set ∂(Loss)/∂(child) from chain rule (∂(Loss)/∂(child) = ∂(Loss)/∂(self) * ∂(self)/∂(child) )
-
-        out_node = Value(out_data, '+', children=(self, other), backward=out_backward) # new node was born in the computational graph
+            dl_do = out_node.grad # ∂(Loss)/∂(out)
+            for c in out_node._children: # self and other  
+                do_dc = 1.0 #  ∂(out)/∂(child) (here 1 because ∂(self+other)/∂(self)=∂(self+other)/∂(other) = 1)
+                c.grad = dl_do * do_dc # set ∂(Loss)/∂(child) from chain rule 
+        
+        out_node._backward = out_backward
         return out_node 
 
 
@@ -42,20 +42,22 @@ class Value:
         """
         other = other if isinstance(other,Value) else Value(other)
         out_data = self.data * other.data  
-        
+        out_node = Value(out_data, '*', children=(self, other)) # new node was born in the computational graph
+
         def out_backward():
             """
-            Compute and set ∂(Loss)/∂(child) for each child of self.
-            ∂(Loss)/∂(child) = ∂(Loss)/∂(self) * ∂(self)/∂(child) 
+            Backward function of the "Out" node.
             """
-            dL_dself = self.grad # ∂(Loss)/∂(self). guaranteed to be known during backprop due to topological sort
-            c1, c2 = self._children
-            dself_dc1 = c2.data # ∂(c1c2)/∂c1 = c2
-            c1.grad = dL_dself * dself_dc1 
-            dself_dc2 = c1.data # ∂(c1c2)/∂c2 = c1
-            c2.grad = dL_dself * dself_dc2 
+            dl_do = out_node.grad 
+            c1, c2 = out_node._children
             
-        out_node = Value(out_data, '*', children=(self, other), backward=out_backward) # new node was born in the computational graph
+            do_dc1 = c2.data # ∂(c1c2)/∂c1 = c2
+            c1.grad += dl_do * do_dc1 
+            
+            do_dc2 = c1.data # ∂(c1c2)/∂c2 = c1
+            c2.grad += dl_do * do_dc2 
+        
+        out_node._backward = out_backward
         return out_node 
 
     def __rmul__(self,other):
@@ -71,17 +73,19 @@ class Value:
         # other = other if isinstance(other, Value) else Value(other)
 
         assert type(other) in [int, float]
-        
-        def out_backward():
-            dL_dself = self.grad # ∂(Loss)/∂(self)
-            c = self._children[0] 
-            dself_dc = other * c.data**(other - 1) # ∂(self)/∂(child)
-            dL_dc = dL_dself * dself_dc  # ∂(L)/∂(child)
-            c.grad = dL_dc
-
         out_data = self.data ** other
-        out = Value(out_data, op=f'**{other:.2f}',children=(self,))
-        return out
+        out_node = Value(out_data, op=f'**{other:.2f}',children=(self,))
+        def out_backward():
+            """
+            Backward function of the "Out" node.
+            """
+            dl_do = out_node.grad # ∂(Loss)/∂(Out)
+            c = out_node._children[0] 
+            do_dc = other * c.data**(other - 1) # ∂(Out)/∂(child)
+            c.grad += dl_do * do_dc # ∂(Loss)/∂(child) = ∂(Loss)/∂(Out) * ∂(Out)/∂(child) by chain rule 
+        
+        out_node._backward = out_backward
+        return out_node
 
     def __truediv__(self, other):
         other = other if isinstance(other, Value) else Value(other)
@@ -93,56 +97,37 @@ class Value:
 
     def __exp__(self):
         """
-        return a new Value node of self.data * 
+        returns a new Value instance (a node) with val = e^(self.data) 
         """
-        other = other if isinstance(other,Value) else Value(other)
         out_data = math.exp(self.data) # e^x  
-        
+        out_node = Value(out_data, f'e^x', children=(self,)) 
+
         def out_backward():
             """
-            Compute and set ∂(Loss)/∂(child) for each child of self.
-            ∂(Loss)/∂(child) = ∂(Loss)/∂(self) * ∂(self)/∂(child) 
+            Backward function of the "Out" node.
             """
-            dL_dself = self.grad # ∂(Loss)/∂(self). guaranteed to be known during backprop due to topological sort
-            dself_dc = self.data # ∂(e^x)/∂(x) = e^x 
-            c = self._children[0] # only one child
-            c.grad += dL_dself * dself_dc # chain rule 
-
-        out_node = Value(out_data, 'exp', children=(self,), backward=out_backward) # new node was born in the computational graph
+            dl_do = out_node.grad # ∂(Loss)/∂(out)
+            do_dc = out_node.data # ∂(e&c)/∂(c) == ∂(out)/∂(c) = e^c 
+            c = self._children[0] # c is the only child of e^c 
+            c.grad += dl_do * do_dc # ∂(loss)/∂(child)  (from chain rule) 
+        out_node._backward = out_backward
         return out_node
     
 
-  
-    
-    
-    # def __div__(self):
-    #     """
-    #     return a new Value node of self.data * 
-    #     """
-    #     out_data = math.exp(self.data) # e^x  
-        
-    #     def out_backward():
-    #         """
-    #         Compute and set ∂(Loss)/∂(child) for each child of self.
-    #         ∂(Loss)/∂(child) = ∂(Loss)/∂(self) * ∂(self)/∂(child) 
-    #         """
-    #         dL_dself = self.grad # ∂(Loss)/∂(self). guaranteed to be known during backprop due to topological sort
-    #         dself_dc = self.data # ∂(e^x)/∂(x) = e^x 
-    #         c = self._children[0] # only one child
-    #         c.grad += dL_dself * dself_dc # chain rule 
-
-    #     out_node = Value(out_data, '^', children=(self,), backward=out_backward) # new node was born in the computational graph
-    #     return out_node
 
     def relu(self):
         """
         Relu(x) = max(x,0)
         """
         out_data = max(0,self.data)
+        out_node = Value(out_data, 'ReLU', children=(self,))
+
         def out_backward():
+            dl_do = out_node.grad
             c = self._children[0] # x
-            c.grad = float(c.data > 0) # ∂(Relu(x)/∂(x)) = 1 if x > 0 else 0 
-        out_node = Value(out_data, 'ReLU', children=(self,), backward=out_backward)
+            do_dc = float(c.data > 0) # # ∂(Relu(x)/∂(x)) = 1 if x > 0 else 0 
+            c.grad = dl_do * do_dc # chain rule 
+        out_node._backward = out_backward
         return out_node
 
 
@@ -151,11 +136,15 @@ class Value:
         Accumulates new gradients in the network. 
         loss_node: node which holds the network's loss. 
         """
-        self.grad = 1.0 # d(loss)/d(loss) = 1 
         topo_sort = topological_sort(self) # starting from the loss node, ending in input nodes (input coordinates)
+        # print("Topo sort:")
+        # for n in topo_sort:
+        #     print(n, n.label)
+        
+        self.grad = 1.0 # d(loss)/d(loss) = 1 
+        # print('Start backprop')
         for node in topo_sort:
             node._backward() # computing gradients for node's children using the chain rule (d(loss)/d(child) = d(loss)/d(node) * d(node)/d(child))
-
 
 
 def topological_sort(root)->list:
