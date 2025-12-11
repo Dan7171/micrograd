@@ -1,9 +1,20 @@
 
-from engine import Value
+from micrograd.engine import Value
 import random
 import numpy as np
 
-class Neuron:
+class Module:
+    """
+    torch nn.module api
+    """
+    def zero_grad(self):
+        for p in self.parameters():
+            p.grad = 0
+
+    def parameters(self):
+        return []
+
+class Neuron(Module):
     """A single neuron, performing <x^T,w>+b"""
     def __init__(self, in_features:int):
         """
@@ -24,7 +35,7 @@ class Neuron:
         param_list.append(self.b)
         return param_list
 
-class Layer: # 
+class Layer(Module): # 
     """A layer of Neurons (nn.Linear in torch) """
     def __init__(self, in_features :int, out_features:int, non_lin:str):
         """
@@ -59,8 +70,18 @@ class ReLU:
         for i,xi in enumerate(x):
             output[i] = xi.relu() # Relu(xi)
         return output
-        
-class MLP:
+
+# class Tanh:
+#     """
+#     element-wise tanh on input vector. 
+#     """
+#     def __call__(self,x:list[Value]):
+#         output = [None for _ in range(len(x))]
+#         for i,xi in enumerate(x):
+#             output[i] = xi.tanh() 
+#         return output
+
+class MLP(Module):
     """ Multi Layer Perceptron (Fully Connected FF NN)"""
     def __init__(self, in_features:int, layers_features:list[int], non_lin:'relu'):
         """
@@ -82,6 +103,8 @@ class MLP:
         match non_lin_type:
             case 'relu':
                 return ReLU()
+            case 'tanh':
+                return Tanh()
 
     def parameters(self):        
         param_list = []
@@ -98,7 +121,10 @@ class MLP:
             if i < len(self.layers) - 1:
                 σi = self.non_lin[i] # non linearity function (vector to vector) 
                 x = σi(x) # non linearity on all layers except the last.    
-        return x
+        if len(x) == 1:
+            return x[0]
+        else:
+            return x
 
 
 # if __name__ == '__main__':

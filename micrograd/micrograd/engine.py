@@ -30,7 +30,7 @@ class Value:
             dl_do = out_node.grad # ∂(Loss)/∂(out)
             for c in out_node._children: # self and other  
                 do_dc = 1.0 #  ∂(out)/∂(child) (here 1 because ∂(self+other)/∂(self)=∂(self+other)/∂(other) = 1)
-                c.grad = dl_do * do_dc # set ∂(Loss)/∂(child) from chain rule 
+                c.grad += dl_do * do_dc # set ∂(Loss)/∂(child) from chain rule 
         
         out_node._backward = out_backward
         return out_node 
@@ -62,10 +62,22 @@ class Value:
 
     def __rmul__(self,other):
         """
-        Enables Multiplication (__mul__) of both self*other and other*self (a fallback if __mul__ fails) 
+        Fallback when self * other fails. Return other * self 
         """
-        return self * other
+        return self * other # 
+     
+    def __radd__(self, other):
+        """
+        Fallback when self + other fails. Return other + self
+        """ 
+        return self + other
 
+    def __neg__(self):
+        """
+        -self
+        """
+        return self * -1
+    
     def __pow__(self, other):
         """
         x**(const)
@@ -88,9 +100,16 @@ class Value:
         return out_node
 
     def __truediv__(self, other):
+        """self/other"""
         other = other if isinstance(other, Value) else Value(other)
         return self * other**-1 # use __pow__ and __mul__
     
+    def __rtruediv__(self, other):
+        """
+        fallback when self/other fails. Returns other/self 
+        """
+        return other * self**-1
+
     def __sub__(self, other):
         other = other if isinstance(other,Value) else Value(other)
         return self +  (-1.0) * other # use __add__
@@ -108,8 +127,9 @@ class Value:
             """
             dl_do = out_node.grad # ∂(Loss)/∂(out)
             do_dc = out_node.data # ∂(e&c)/∂(c) == ∂(out)/∂(c) = e^c 
-            c = self._children[0] # c is the only child of e^c 
+            c = out._children[0] # c is the only child of e^c 
             c.grad += dl_do * do_dc # ∂(loss)/∂(child)  (from chain rule) 
+        
         out_node._backward = out_backward
         return out_node
     
@@ -124,12 +144,24 @@ class Value:
 
         def out_backward():
             dl_do = out_node.grad
-            c = self._children[0] # x
+            c = out_node._children[0] # x
             do_dc = float(c.data > 0) # # ∂(Relu(x)/∂(x)) = 1 if x > 0 else 0 
-            c.grad = dl_do * do_dc # chain rule 
+            # print(out_node.data)
+            # print(out_node.grad)
+            # print(c.data)
+            c.grad += dl_do * do_dc # chain rule 
         out_node._backward = out_backward
         return out_node
 
+    def tanh(self):
+        x = self.data
+        t = (math.exp(2*x) - 1)/(math.exp(2*x) + 1)
+        out = Value(t, (self, ), 'tanh')
+        
+        def out_backward():
+            self.grad += (1 - t**2) * out.grad
+        out._backward = out_backward
+        
 
     def backward(self):
         """
@@ -143,9 +175,10 @@ class Value:
         
         self.grad = 1.0 # d(loss)/d(loss) = 1 
         # print('Start backprop')
-        for node in topo_sort:
+        for i,node in enumerate(topo_sort):
             node._backward() # computing gradients for node's children using the chain rule (d(loss)/d(child) = d(loss)/d(node) * d(node)/d(child))
-
+            # print(f'i){i}) data= {node.data:.2f}, Cs op:{node._op},  Cs data:{node._children},Cs g: {[c.grad for c in node._children]}  ')
+            
 
 def topological_sort(root)->list:
     """
